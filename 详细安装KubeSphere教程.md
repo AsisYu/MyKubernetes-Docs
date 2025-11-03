@@ -1,14 +1,30 @@
-# CentOS 9 国内环境下在已有 Kubernetes 集群上安装 KubeSphere 详细教程
+# CentOS 9 在已有 Kubernetes 集群上安装 KubeSphere 详细教程
 
-## 📋 目录
-- [🚀 国内镜像源说明](#-国内镜像源说明2025年最新可用)
+> **文档更新说明（2025-11-04）**：
+> - ⭐ **新增**：KubeSphere版本选择详细说明（v3.4.1 vs v4.2.0）
+> - ⭐ **新增**：官方安装方式对比（KubeKey vs kubectl）
+> - ⭐ **新增**：为所有涉及镜像的步骤添加海外环境安装说明
+> - ⭐ **新增**：环境选择指导，帮助用户根据网络环境选择合适的镜像源
+> - ⭐ **新增**：NFS存储配置步骤明确标注各节点执行位置
+> - 🔄 **更新**：GitHub下载方式（2025年），移除失效的镜像加速服务
+> - 🔄 **更新**：明确说明本教程使用v3.4.1的原因和优势
+> - 🔄 **更新**：澄清与KubeSphere官方v4.2.0文档的关系
+> - 💡 **说明**：本教程专注于在已有K8s集群上安装，不同于官方全新安装方式
+> - 优化文档结构，每个镜像配置点都提供国内和海外两种方案
+
+## 目录
+- [环境说明与方案选择](#环境说明与方案选择)
+- [镜像源配置说明](#镜像源配置说明)
 - [1. 环境说明](#1-环境说明)
+  - [1.1 集群架构信息](#11-集群架构信息)
+  - [1.2 KubeSphere 简介](#12-kubesphere-简介)
+  - [1.3 关于KubeSphere版本选择（重要说明）](#13-关于kubesphere版本选择重要说明)
 - [2. 前置条件检查](#2-前置条件检查)
   - [2.1 检查 Kubernetes 集群状态](#21-检查-kubernetes-集群状态)
   - [2.2 检查系统资源](#22-检查系统资源)
   - [2.3 检查存储类（StorageClass）](#23-检查存储类storageclass)
 - [3. 准备工作](#3-准备工作)
-  - [3.1 配置国内镜像加速](#31-配置国内镜像加速)
+  - [3.1 准备配置目录](#31-准备配置目录)
   - [3.2 创建 KubeSphere 部署文件](#32-创建-kubesphere-部署文件)
 - [4. 安装 KubeSphere（最小化安装）](#4-安装-kubesphere最小化安装)
   - [4.1 创建 KubeSphere Installer 部署文件](#41-创建-kubesphere-installer-部署文件)
@@ -34,36 +50,70 @@
 - [11. 性能优化建议](#11-性能优化建议)
 - [12. 参考资料](#12-参考资料)
 - [13. 附录](#13-附录)
-  - [13.1 完整的 KubeSphere Installer YAML](#131-完整的-kubesphere-installer-yaml国内镜像版)
+  - [13.1 完整的 KubeSphere Installer YAML](#131-完整的-kubesphere-installer-yaml)
   - [13.2 常用命令速查](#132-常用命令速查)
   - [13.3 配置 etcd 监控（可选）](#133-配置-etcd-监控可选)
 - [14. 故障排查流程图](#14-故障排查流程图)
 
 ---
 
-## 🚀 国内镜像源说明（2025年最新可用）
+## 环境说明与方案选择
 
-本教程使用的所有镜像已更新为2025年实际可用的国内镜像源：
+本文档支持**国内和海外**两种网络环境的部署。
 
-### NFS Provisioner 镜像（已验证可用）
+### 国内环境（中国大陆）
+- **特点**：官方镜像源（Docker Hub、Quay.io）访问慢或无法访问
+- **解决方案**：使用阿里云镜像源加速
+- **适用**：中国大陆的服务器
+
+### 海外环境（国际/香港/台湾等）
+- **特点**：可直接访问官方镜像源，速度快且稳定
+- **解决方案**：直接使用 KubeSphere 官方镜像源
+- **适用**：海外服务器、香港、台湾等地区
+
+### 如何选择
+在后续每个涉及镜像配置的步骤中，文档都会提供：
+- **方案A：国内环境配置**（使用阿里云镜像）
+- **方案B：海外环境配置**（使用官方镜像）
+
+请根据您服务器的实际网络环境选择对应方案。
+
+---
+
+## 镜像源配置说明
+
+### 方案A：国内环境镜像源（2025年最新可用）
+
+**NFS Provisioner 镜像（已验证可用）**
 - **主用镜像**: `registry.cn-hangzhou.aliyuncs.com/weiyigeek/nfs-subdir-external-provisioner:v4.0.2`
 - **备用镜像1**: `registry.cn-beijing.aliyuncs.com/mydlq/nfs-subdir-external-provisioner:v4.0.0`
 - **备用镜像2**: `dyrnq/nfs-subdir-external-provisioner:v4.0.2`
 
-### KubeSphere 镜像（官方阿里云仓库）
+**KubeSphere 镜像（官方阿里云仓库）**
 - **镜像仓库**: `registry.cn-beijing.aliyuncs.com/kubesphereio`
 - **安装器镜像**: `registry.cn-beijing.aliyuncs.com/kubesphereio/ks-installer:v3.4.1`
-- 说明：这是 KubeSphere 官方维护的阿里云镜像仓库，长期稳定可用
+- **说明**：这是 KubeSphere 官方维护的阿里云镜像仓库，长期稳定可用
+
+### 方案B：海外环境镜像源
+
+**NFS Provisioner 镜像（官方）**
+- **镜像**: `registry.k8s.io/sig-storage/nfs-subdir-external-provisioner:v4.0.2`
+- **备用**: `k8s.gcr.io/sig-storage/nfs-subdir-external-provisioner:v4.0.2`
+
+**KubeSphere 镜像（官方 Docker Hub）**
+- **镜像仓库**: `kubesphere`（Docker Hub 官方仓库）
+- **安装器镜像**: `kubesphere/ks-installer:v3.4.1`
+- **说明**：KubeSphere 官方 Docker Hub 仓库，速度快且版本更新及时
 
 ### 使用建议
-1. **优先使用主用镜像**
-2. **如主用镜像拉取失败，依次尝试备用镜像**
-3. **本教程已将所有镜像地址更新为上述可用源**
+1. **国内环境**：优先使用主用镜像，失败则尝试备用镜像
+2. **海外环境**：直接使用官方镜像即可
+3. **本教程已在各步骤中提供两种方案的完整配置**
 
 ### 快速导航
-- 🚀 [开始安装 NFS 存储](#23-检查存储类storageclass)
-- 📦 [开始安装 KubeSphere](#4-安装-kubesphere最小化安装)
-- 🔧 [故障排查指南](#7-常见问题处理)
+- [开始安装 NFS 存储](#23-检查存储类storageclass)
+- [开始安装 KubeSphere](#4-安装-kubesphere最小化安装)
+- [故障排查指南](#7-常见问题处理)
 
 ---
 
@@ -81,7 +131,7 @@
 - 操作系统：CentOS 9
 - Kubernetes 版本：v1.28.0
 - 网络插件：Flannel
-- KubeSphere 版本：v3.4.1（推荐版本）
+- KubeSphere 版本：v3.4.1（本教程使用版本）
 
 ### 1.2 KubeSphere 简介
 
@@ -94,6 +144,42 @@ KubeSphere 是一个基于 Kubernetes 构建的**分布式操作系统**，提�
 - 监控告警
 - 日志查询和收集
 - 存储和网络管理
+
+### 1.3 关于KubeSphere版本选择（重要说明）
+
+**KubeSphere官方安装方式（2025年）：**
+- **官方推荐工具**：KubeKey（https://docs.kubesphere.com.cn/v4.2.0/）
+- **官方最新版本**：v4.2.0
+- **安装方式**：全新安装Kubernetes + KubeSphere
+
+**本教程的选择：**
+- **使用版本**：KubeSphere v3.4.1（稳定版本）
+- **安装方式**：kubectl方式，在已有Kubernetes集群上安装
+- **适用场景**：已部署Kubernetes集群，不需要重新安装K8s
+
+**为什么本教程使用v3.4.1而非v4.2.0？**
+
+| 对比项 | v3.4.1（本教程） | v4.2.0（最新版） |
+|--------|-----------------|-----------------|
+| **成熟度** | ✅ 2023年发布，成熟稳定 | ⚠️ 2024年底发布，快速迭代中 |
+| **安装方式** | ✅ kubectl方式明确 | ❌ 主要依赖KubeKey（需全新安装） |
+| **已有集群** | ✅ 完美支持 | ⚠️ 支持不明确 |
+| **文档完善** | ✅ 文档齐全，社区成熟 | ⚠️ 文档更新中 |
+| **工具支持** | ✅ KubeKey v3.1.11支持 | ❌ KubeKey v3.1.11不支持 |
+| **GitHub下载** | ✅ Release文件可用 | ❌ 经测试无法下载（返回404） |
+| **生产推荐** | ✅ 推荐 | ⚠️ 待稳定后推荐 |
+
+**版本选择建议：**
+- ✅ **推荐v3.4.1**：已有K8s集群、生产环境、稳定性优先
+- ⚠️ **可选v4.2.0**：全新部署、测试环境、愿意使用KubeKey重装K8s
+- 📋 **未来升级**：v3.4.1可在未来升级到v4.x
+
+**本教程优势：**
+1. ✅ 不破坏现有Kubernetes集群
+2. ✅ 使用kubectl原生方式，简单可控
+3. ✅ 适合生产环境渐进式部署
+4. ✅ 文档完善，遇到问题易解决
+5. ✅ v3.4.1经过充分验证，稳定可靠
 
 ---
 
@@ -161,11 +247,67 @@ kubectl get sc
 kubectl get sc | grep "(default)"
 ```
 
+**生产环境存储方案选择建议：**
+
+根据实际生产环境经验，不同部署环境推荐的存储方案：
+
+**云上环境（推荐指数：5/5）**
+- **阿里云**：`alicloud-disk-essd`（高性能）或 `alicloud-disk-ssd`（标准性能）
+- **AWS**：`gp3`（通用SSD）或 `io2`（高性能场景）
+- **腾讯云**：`cbs-ssd` 或 `cbs-premium`
+- **华为云**：`sas`（SAS盘）或 `ssd`（SSD盘）
+- **优势**：开箱即用、自动备份、按需扩容、无需运维
+- **成本**：约 0.35-1 元/GB/月（根据性能等级）
+
+**自建环境 - 大规模（50+节点）**
+- **推荐**：Ceph RBD（块存储）+ CephFS（文件存储）
+- **配置**：至少3节点SSD存储集群、万兆网络、副本数3
+- **工具**：使用 Rook-Ceph Operator 简化部署
+- **优势**：高性能、高可用、久经考验
+- **投入**：约15-20万元（一次性硬件成本）
+
+**自建环境 - 中小规模（10-50节点）**
+- **推荐**：Longhorn 分布式块存储
+- **配置**：每节点挂载额外数据盘（500GB-2TB SSD）、副本数3
+- **优势**：部署简单、Web UI管理、自动快照备份
+- **投入**：约3-5万元（根据节点数和磁盘规格）
+
+**自建环境 - 小规模（<10节点）**
+- **推荐**：高可用NFS（双机热备 + Keepalived）
+- **配置**：Primary + Backup NFS服务器、共享存储（SAN或RAID）
+- **优势**：技术门槛低、支持ReadWriteMany
+- **注意**：单点性能瓶颈，不适合IO密集型应用
+
+**KubeSphere 组件存储需求**：
+- **Prometheus**（监控）：20-50GB，需要高IOPS
+- **Elasticsearch**（日志）：50-200GB，IO密集
+- **Redis/MySQL**（元数据）：10-20GB，需要高可用
+- **Jenkins**（DevOps）：10-30GB
+- **MinIO**（对象存储）：20-100GB
+
+**选择建议**：
+- 云上部署：100%使用云厂商托管存储
+- 自建大规模：Ceph（有专业运维团队）
+- 自建中小规模：Longhorn（性价比最高）
+- 测试/学习环境：单节点NFS（快速搭建）
+
+---
+
 **如果没有 StorageClass，需要先配置：**
 
-#### 方案 1：使用 NFS 动态存储（推荐用于测试环境）
+#### 方案 1：使用 NFS 动态存储（推荐）
 
-**步骤 1：在一台服务器上安装 NFS 服务器（可以在 master 节点）**
+NFS 动态存储适用于大多数场景：
+- **测试/开发环境**：快速部署，易于管理
+- **中小规模生产环境**：配合高可用 NFS 服务器（如使用 NFS-Ganesha + Ceph）可用于生产
+- **优点**：支持 ReadWriteMany（多节点读写）、动态创建 PV、易于扩容
+- **注意**：大规模生产环境建议使用 Ceph RBD、GlusterFS 或云存储
+
+**步骤 1：安装 NFS 服务器**
+
+**执行节点：Master 节点（或专门的存储服务器）**
+
+本示例在 master 节点（`k8s-master-gz`，IP: `172.16.0.10`）上安装 NFS 服务器。您也可以选择专门的存储服务器。
 
 ```bash
 # 安装 NFS 服务器
@@ -193,6 +335,8 @@ showmount -e localhost
 
 **验证 NFS 服务器安装：**
 
+**执行节点：Master 节点（NFS 服务器所在节点）**
+
 ```bash
 # 1. 检查 NFS 服务状态
 systemctl status nfs-server
@@ -211,13 +355,19 @@ ls -ld /nfs/data
 touch /nfs/data/test.txt && rm -f /nfs/data/test.txt && echo "NFS 目录写入权限正常" || echo "NFS 目录写入权限异常"
 ```
 
-**步骤 2：在所有节点安装 NFS 客户端**
+**步骤 2：安装 NFS 客户端**
+
+**执行节点：所有 Worker 节点（如果 Master 不是 NFS 服务器，也需要在 Master 节点执行）**
+
+在本示例中，需要在以下节点执行：
+- `k8s-woker01-gz` (172.16.1.10)
+- `k8s-woker02-gz` (172.16.1.11)
 
 ```bash
-# 在所有 worker 节点执行
+# 在每个 worker 节点分别执行
 dnf install -y nfs-utils
 
-# 测试挂载（在 worker 节点测试）
+# 测试挂载（验证与 NFS 服务器的连接）
 mkdir -p /mnt/test
 mount -t nfs 172.16.0.10:/nfs/data /mnt/test
 umount /mnt/test
@@ -225,8 +375,10 @@ umount /mnt/test
 
 **验证 NFS 客户端安装：**
 
+**执行节点：每个 Worker 节点**
+
 ```bash
-# 在每个 worker 节点执行以下验证
+# 在每个 worker 节点分别执行以下验证
 
 # 1. 检查 NFS 客户端工具是否安装
 which mount.nfs
@@ -247,14 +399,18 @@ rmdir /mnt/test
 echo "NFS 客户端测试成功"
 ```
 
-**步骤 3：安装 NFS Provisioner （安装 NFS 服务器的节点）**
+**步骤 3：安装 NFS Provisioner**
+
+**执行节点：Master 节点（有 kubectl 权限的节点）**
+
+使用 kubectl 部署 NFS Provisioner，它会自动在 Kubernetes 集群中创建存储类。
 
 ```bash
 # 创建 NFS Provisioner 命名空间
 kubectl create namespace nfs-provisioner
 
 # 使用 Helm 安装（如果没有 Helm，参见下方安装 Helm）
-# 添加 Helm 仓库（使用阿里云镜像）
+# 添加 Helm 仓库
 helm repo add nfs-subdir-external-provisioner https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
 
 # 更新 Helm 仓库
@@ -271,24 +427,52 @@ helm install nfs-subdir-external-provisioner \
 
 **如果没有 Helm，先安装 Helm：**
 
+**方法1：使用官方安装脚本（推荐）**
+
 ```bash
 # 下载 Helm 安装脚本
 curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 -o get_helm.sh
 
-# 如果无法下载，使用国内镜像
-curl -fsSL https://get.helm.sh/helm-v3.13.0-linux-amd64.tar.gz -o helm.tar.gz
-tar -zxvf helm.tar.gz
-mv linux-amd64/helm /usr/local/bin/helm
-chmod +x /usr/local/bin/helm
+# 添加执行权限
+chmod +x get_helm.sh
+
+# 执行安装脚本
+./get_helm.sh
 
 # 验证安装
 helm version
 ```
 
-**或者使用 YAML 方式部署 NFS Provisioner：**
+**方法2：手动下载二进制文件（适用于无法访问GitHub的环境）**
 
 ```bash
-# 下载 NFS Provisioner 部署文件
+# 下载 Helm 二进制包
+curl -fsSL https://get.helm.sh/helm-v3.13.0-linux-amd64.tar.gz -o helm.tar.gz
+
+# 解压
+tar -zxvf helm.tar.gz
+
+# 移动到系统路径
+mv linux-amd64/helm /usr/local/bin/helm
+
+# 添加执行权限
+chmod +x /usr/local/bin/helm
+
+# 清理下载文件
+rm -rf linux-amd64 helm.tar.gz
+
+# 验证安装
+helm version
+```
+
+**或者使用 YAML 方式部署 NFS Provisioner（根据环境选择镜像）：**
+
+**执行节点：Master 节点（有 kubectl 权限的节点）**
+
+**方案A：国内环境配置**
+
+```bash
+# 创建 NFS Provisioner 部署文件（使用阿里云镜像）
 cat > nfs-provisioner-deploy.yaml <<'EOF'
 apiVersion: v1
 kind: ServiceAccount
@@ -374,8 +558,8 @@ spec:
       containers:
         - name: nfs-client-provisioner
           image: registry.cn-hangzhou.aliyuncs.com/weiyigeek/nfs-subdir-external-provisioner:v4.0.2
-          # 备用镜像1: registry.cn-beijing.aliyuncs.com/mydlq/nfs-subdir-external-provisioner:v4.0.0
-          # 备用镜像2: dyrnq/nfs-subdir-external-provisioner:v4.0.2
+          # 国内备用镜像1: registry.cn-beijing.aliyuncs.com/mydlq/nfs-subdir-external-provisioner:v4.0.0
+          # 国内备用镜像2: dyrnq/nfs-subdir-external-provisioner:v4.0.2
           volumeMounts:
             - name: nfs-client-root
               mountPath: /persistentvolumes
@@ -405,13 +589,147 @@ EOF
 
 # 应用配置
 kubectl apply -f nfs-provisioner-deploy.yaml
+```
 
+---
+
+**方案B：海外环境配置**
+
+```bash
+# 创建 NFS Provisioner 部署文件（使用官方镜像）
+cat > nfs-provisioner-deploy.yaml <<'EOF'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nfs-client-provisioner
+  namespace: kube-system
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nfs-client-provisioner-runner
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: run-nfs-client-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: nfs-client-provisioner
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: nfs-client-provisioner-runner
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leader-locking-nfs-client-provisioner
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leader-locking-nfs-client-provisioner
+  namespace: kube-system
+subjects:
+  - kind: ServiceAccount
+    name: nfs-client-provisioner
+    namespace: kube-system
+roleRef:
+  kind: Role
+  name: leader-locking-nfs-client-provisioner
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-client-provisioner
+  namespace: kube-system
+  labels:
+    app: nfs-client-provisioner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nfs-client-provisioner
+  template:
+    metadata:
+      labels:
+        app: nfs-client-provisioner
+    spec:
+      serviceAccountName: nfs-client-provisioner
+      containers:
+        - name: nfs-client-provisioner
+          image: registry.k8s.io/sig-storage/nfs-subdir-external-provisioner:v4.0.2
+          # 海外备用镜像: k8s.gcr.io/sig-storage/nfs-subdir-external-provisioner:v4.0.2
+          volumeMounts:
+            - name: nfs-client-root
+              mountPath: /persistentvolumes
+          env:
+            - name: PROVISIONER_NAME
+              value: k8s-sigs.io/nfs-subdir-external-provisioner
+            - name: NFS_SERVER
+              value: 172.16.0.10
+            - name: NFS_PATH
+              value: /nfs/data
+      volumes:
+        - name: nfs-client-root
+          nfs:
+            server: 172.16.0.10
+            path: /nfs/data
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-client
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: k8s-sigs.io/nfs-subdir-external-provisioner
+parameters:
+  archiveOnDelete: "false"
+EOF
+
+# 应用配置
+kubectl apply -f nfs-provisioner-deploy.yaml
+```
+
+---
+
+**说明**：
+- 国内环境使用阿里云镜像，避免拉取失败
+- 海外环境使用官方镜像，速度更快且版本更新
+- 两种配置除镜像地址外完全相同
+
+```bash
 # 验证部署
 kubectl get pods -n kube-system | grep nfs-client-provisioner
 kubectl get sc
 ```
 
 **验证 NFS Provisioner 部署：**
+
+**执行节点：Master 节点（有 kubectl 权限的节点）**
 
 ```bash
 # 1. 检查 Pod 状态（必须是 Running）
@@ -462,24 +780,42 @@ kubectl get pvc test-pvc
 # 检查 PV 是否自动创建
 kubectl get pv | grep test-pvc
 
-# 检查 NFS 服务器上是否创建了目录
+# 检查 NFS 服务器上是否创建了目录（在 NFS 服务器节点执行）
+# 切换到 NFS 服务器节点（本例中是 master 节点）
 ls -la /nfs/data/
 # 应该看到类似：default-test-pvc-pvc-xxxxxxxx 的目录
 
-# 清理测试 PVC
+# 清理测试 PVC（在 master 节点执行）
 kubectl delete -f test-pvc.yaml
 rm -f test-pvc.yaml
 
 echo "NFS 动态存储测试成功！"
 ```
 
+**💡 步骤总结：**
+- **步骤 1（NFS 服务器安装）**：在 Master 节点执行
+- **步骤 2（NFS 客户端安装）**：在所有 Worker 节点执行
+- **步骤 3（NFS Provisioner 部署）**：在 Master 节点执行
+- **验证步骤**：主要在 Master 节点执行 kubectl 命令，部分验证需要在各自的节点执行
+
 **如果验证失败，请检查：**
 - Pod 日志中的错误信息（参见 [7.2 镜像拉取失败](#72-镜像拉取失败imagepullbackoff)）
 - NFS 服务器是否正常运行
 - 网络连接是否正常
-- 镜像是否成功拉取（参见 [国内镜像源说明](#-国内镜像源说明2025年最新可用)）
+- 镜像是否成功拉取（参见 [镜像源配置说明](#镜像源配置说明)）
 
-#### 方案 2：使用本地存储（不推荐用于生产环境）
+#### 方案 2：使用本地存储（仅用于测试）
+
+本地存储仅适用于测试或学习环境：
+- **适用场景**：单节点测试、快速验证功能
+- **限制**：
+  - 不支持动态创建 PV（需要手动创建 PV）
+  - 不支持 ReadWriteMany（多节点读写）
+  - Pod 只能调度到有 PV 的节点
+  - 数据无法迁移和备份
+- **不推荐生产环境使用**
+
+**执行节点：Master 节点（有 kubectl 权限的节点）**
 
 ```bash
 cat > local-storage.yaml <<'EOF'
@@ -500,49 +836,96 @@ kubectl apply -f local-storage.yaml
 
 ## 3. 准备工作
 
-### 3.1 配置国内镜像加速
+### 3.1 准备配置目录
 
-为了加快安装速度，配置使用阿里云镜像仓库。
-
-**在 master 节点创建配置文件：**
+**在 master 节点创建配置目录：**
 
 ```bash
 # 创建 KubeSphere 配置目录
 mkdir -p ~/kubesphere
-
-# 下载 KubeSphere 安装器配置文件
 cd ~/kubesphere
 ```
 
+**环境确认**：
+- **国内环境**：后续步骤将使用阿里云镜像源（`registry.cn-beijing.aliyuncs.com/kubesphereio`）
+- **海外环境**：后续步骤将使用官方镜像源（`kubesphere` Docker Hub）
+
+请根据您的实际网络环境，在后续步骤中选择对应的配置方案。
+
 ### 3.2 创建 KubeSphere 部署文件
 
-**⚠️ 重要说明：** GitHub 下载链接经常失效，**强烈推荐直接使用本教程提供的完整 YAML 内容**，无需下载。
 
 **方法 1：使用本教程提供的完整 YAML**
 
 本教程在以下章节提供了完整的 YAML 文件内容，已配置好国内镜像源。
 
 **直接跳转到以下章节，按照步骤创建文件即可：**
-- 📄 完整的 `kubesphere-installer.yaml` → [第 13.1 节附录](#131-完整的-kubesphere-installer-yaml国内镜像版)
-- 📄 完整的 `cluster-configuration.yaml` → [第 4.2 节](#42-修改集群配置文件)
-- 已配置国内镜像加速
-- 已针对最小化安装优化
+- 完整的 `kubesphere-installer.yaml` → [第 13.1 节附录](#131-完整的-kubesphere-installer-yaml)
+- 完整的 `cluster-configuration.yaml` → [第 4.2 节](#42-修改集群配置文件)
 
-**方法 2：尝试从 GitHub 下载（可能失效）**
+**方法 2：从 GitHub 官方下载（需要验证和修改）**
+
+**⚠️ 版本说明（2025年实测更新）：**
+
+**本教程使用v3.4.1的原因：**
+1. **KubeSphere v4.2.0现状（经实际测试）**：
+   - ❌ KubeKey v3.1.11不支持v4.2.0（报错：`Unsupported KubeSphere version`）
+   - ❌ GitHub Release文件无法下载（返回`Not Found`，只有9字节）
+   - ⚠️ 主要通过KubeKey全新安装，不适合已有K8s集群
+   - ⚠️ 文档和工具链还在快速迭代中
+
+2. **KubeSphere v3.4.1优势（经验证）**：
+   - ✅ 成熟稳定，生产环境广泛使用
+   - ✅ kubectl方式明确支持已有集群
+   - ✅ 文档完善，社区支持充分
+   - ✅ GitHub Release文件可正常下载
+   - ✅ 与Kubernetes v1.28.0兼容性好
+
+**官方文档参考：**
+- **v4.2.0官方文档**：https://docs.kubesphere.com.cn/v4.2.0/ （使用KubeKey全新安装）
+- **v3.4官方文档**：https://www.kubesphere.io/zh/docs/v3.4/ （支持kubectl方式）
+- **本教程定位**：在已有K8s集群上安装v3.4.1（kubectl方式）
+
+**升级路径：**
+- 本教程安装v3.4.1后，待v4.x成熟，可按官方文档升级
 
 ```bash
-# ⚠️ 注意：以下链接可能已失效，建议使用方法1
+# ⚠️ 注意：从 GitHub 下载的文件需要验证和修改
 
-# 尝试直接下载
+# 方法 2A：直接从 GitHub 官方下载（需要能访问 GitHub）
 wget https://github.com/kubesphere/ks-installer/releases/download/v3.4.1/kubesphere-installer.yaml
 wget https://github.com/kubesphere/ks-installer/releases/download/v3.4.1/cluster-configuration.yaml
 
-# 如果失败，尝试使用 GitHub 镜像
-wget https://mirror.ghproxy.com/https://github.com/kubesphere/ks-installer/releases/download/v3.4.1/kubesphere-installer.yaml
-wget https://mirror.ghproxy.com/https://github.com/kubesphere/ks-installer/releases/download/v3.4.1/cluster-configuration.yaml
+# 方法 2B：使用 GitHub API 下载（更稳定）
+curl -L -o kubesphere-installer.yaml \
+  https://github.com/kubesphere/ks-installer/releases/download/v3.4.1/kubesphere-installer.yaml
+curl -L -o cluster-configuration.yaml \
+  https://github.com/kubesphere/ks-installer/releases/download/v3.4.1/cluster-configuration.yaml
 
-# 如果仍然失败，直接使用本教程提供的 YAML 内容（方法1）
+# 方法 2C：使用 Git 克隆仓库（推荐，可获取最新文件）
+git clone --depth 1 --branch v3.4.1 https://github.com/kubesphere/ks-installer.git
+cd ks-installer/deploy
+# 文件位于 kubesphere-installer.yaml 和 cluster-configuration.yaml
+
+# ⚠️ 重要：下载后必须进行以下验证和修改
+# 1. 验证是否包含 ClusterConfiguration CRD 定义
+grep "CustomResourceDefinition" kubesphere-installer.yaml
+# 如果没有输出，说明缺少 CRD，必须使用方法1
+
+# 2. 根据网络环境修改镜像地址
+# 国内环境：将镜像改为阿里云镜像源（参考附录 13.1）
+# 海外环境：保持官方镜像即可
+
+# 3. 检查版本是否匹配
+grep "v3.4.1" kubesphere-installer.yaml cluster-configuration.yaml
 ```
+
+**⚠️ GitHub 镜像加速服务说明（2025年更新）：**
+- 由于政策变化，许多 GitHub 镜像加速服务（如 ghproxy.com、ghps.cc）已停止服务或不稳定
+- **不再推荐**使用第三方镜像站，建议：
+  - **国内用户**：使用本教程提供的完整 YAML（方法1）
+  - **海外用户**：直接从 GitHub 官方下载即可
+  - **企业用户**：自建 GitHub 镜像或使用代理服务
 
 **验证下载的文件（如果成功下载）：**
 
@@ -666,7 +1049,7 @@ spec:
     enabled: false
 ```
 
-**📖 什么是单集群模式（Single Cluster Mode）？**
+**什么是单集群模式（Single Cluster Mode）？**
 
 KubeSphere 支持两种部署模式：
 
@@ -689,7 +1072,11 @@ KubeSphere 支持两种部署模式：
 
 **📝 本教程使用单集群模式（`clusterRole: none`），这是最常见和推荐的部署方式。**
 
-**针对国内环境的完整配置示例：**
+**根据您的网络环境选择对应的配置：**
+
+---
+
+### 方案A：国内环境配置（使用阿里云镜像）
 
 ```bash
 cat > cluster-configuration.yaml <<'EOF'
@@ -708,7 +1095,9 @@ spec:
     jwtSecret: ""
   local_registry: ""
   namespace_override: ""
-  # 使用阿里云镜像仓库（KubeSphere 官方阿里云镜像）
+  # 镜像仓库配置（根据环境选择）
+  # 国内环境使用阿里云镜像：registry.cn-beijing.aliyuncs.com/kubesphereio
+  # 海外环境使用官方镜像：kubesphere （或留空使用默认）
   imageRegistry: registry.cn-beijing.aliyuncs.com/kubesphereio
   
   # etcd 监控配置
@@ -870,6 +1259,175 @@ spec:
 EOF
 ```
 
+---
+
+### 方案B：海外环境配置（使用官方镜像）
+
+```bash
+cat > cluster-configuration.yaml <<'EOF'
+---
+apiVersion: installer.kubesphere.io/v1alpha1
+kind: ClusterConfiguration
+metadata:
+  name: ks-installer
+  namespace: kubesphere-system
+  labels:
+    version: v3.4.1
+spec:
+  persistence:
+    storageClass: ""
+  authentication:
+    jwtSecret: ""
+  local_registry: ""
+  namespace_override: ""
+  # 海外环境使用官方镜像仓库（留空或填写 kubesphere）
+  imageRegistry: ""  # 留空使用默认官方镜像，或填写：kubesphere
+  
+  # etcd 监控配置
+  etcd:
+    monitoring: false
+    endpointIps: localhost
+    port: 2379
+    tlsEnable: true
+  
+  common:
+    core:
+      console:
+        enableMultiLogin: true
+        port: 30880
+        type: NodePort
+    redis:
+      enabled: false
+      enableHA: false
+      volumeSize: 2Gi
+    openldap:
+      enabled: false
+      volumeSize: 2Gi
+    minio:
+      volumeSize: 20Gi
+    monitoring:
+      endpoint: http://prometheus-operated.kubesphere-monitoring-system.svc:9090
+      GPUMonitoring:
+        enabled: false
+    gpu:
+      kinds:
+      - resourceName: "nvidia.com/gpu"
+        resourceType: "GPU"
+        default: true
+    es:
+      enabled: false
+      logMaxAge: 7
+      elkPrefix: logstash
+      basicAuth:
+        enabled: false
+        username: ""
+        password: ""
+      externalElasticsearchHost: ""
+      externalElasticsearchPort: ""
+  
+  # 最小化安装配置
+  alerting:
+    enabled: false
+  auditing:
+    enabled: false
+  devops:
+    enabled: false
+  events:
+    enabled: false
+  logging:
+    enabled: false
+  metrics_server:
+    enabled: true
+  monitoring:
+    storageClass: ""
+    node_exporter:
+      port: 9100
+      resources: {}
+    kube_rbac_proxy:
+      resources: {}
+    kube_state_metrics:
+      resources: {}
+    prometheus:
+      replicas: 1
+      volumeSize: 20Gi
+      resources: {}
+    alertmanager:
+      replicas: 1
+      resources: {}
+    notification_manager:
+      resources: {}
+      replicas: 2
+      image:
+        ks_am_operator_repo: kubesphereio/alertmanager-operator
+        ks_am_operator_tag: v0.2.3
+        ks_notification_manager_repo: kubesphereio/notification-manager
+        ks_notification_manager_tag: v2.3.0
+        ks_notification_tenant_sidecar_repo: kubesphereio/notification-tenant-sidecar
+        ks_notification_tenant_sidecar_tag: v3.2.0
+    gpu:
+      nvidia_dcgm_exporter:
+        enabled: false
+        resources: {}
+  multicluster:
+    clusterRole: none
+  network:
+    networkpolicy:
+      enabled: false
+    ippool:
+      type: none
+    topology:
+      type: none
+  openpitrix:
+    store:
+      enabled: false
+  servicemesh:
+    enabled: false
+    istio:
+      components:
+        ingressGateways:
+        - name: istio-ingressgateway
+          enabled: false
+        cni:
+          enabled: false
+  edgeruntime:
+    enabled: false
+    kubeedge:
+      enabled: false
+      cloudCore:
+        cloudHub:
+          advertiseAddress:
+            - ""
+        service:
+          cloudhubNodePort: "30000"
+          cloudhubQuicNodePort: "30001"
+          cloudhubHttpsNodePort: "30002"
+          cloudstreamNodePort: "30003"
+          tunnelNodePort: "30004"
+        resources: {}
+      iptables-manager:
+        enabled: true
+        resources: {}
+      edgeService:
+        resources: {}
+  gatekeeper:
+    enabled: false
+    controller_manager:
+      resources: {}
+    audit:
+      resources: {}
+  terminal:
+    timeout: 600
+EOF
+```
+
+---
+
+**配置说明**：
+- **国内环境（方案A）**：`imageRegistry` 配置为 `registry.cn-beijing.aliyuncs.com/kubesphereio`
+- **海外环境（方案B）**：`imageRegistry` 留空或配置为 `kubesphere`，使用Docker Hub官方镜像
+- 两种配置除镜像仓库外完全相同
+- 海外环境镜像拉取速度更快，版本更新及时
+
 ### 4.3 验证配置文件
 
 在执行安装前，先验证配置文件是否正确：
@@ -883,13 +1441,15 @@ kubectl apply -f kubesphere-installer.yaml --dry-run=client
 kubectl apply -f cluster-configuration.yaml --dry-run=client
 # 如果没有错误，会显示：clusterconfiguration.installer.kubesphere.io/ks-installer configured (dry run)
 
-# 3. 检查镜像地址是否正确
+# 3. 检查镜像地址是否正确（根据环境验证）
 grep "image:" kubesphere-installer.yaml
-# 应该包含：registry.cn-beijing.aliyuncs.com/kubesphereio/ks-installer:v3.4.1
+# 国内环境应该包含：registry.cn-beijing.aliyuncs.com/kubesphereio/ks-installer:v3.4.1
+# 海外环境应该包含：kubesphere/ks-installer:v3.4.1
 
-# 4. 检查 imageRegistry 配置
+# 4. 检查 imageRegistry 配置（根据环境验证）
 grep "imageRegistry:" cluster-configuration.yaml
-# 应该包含：registry.cn-beijing.aliyuncs.com/kubesphereio
+# 国内环境应该包含：registry.cn-beijing.aliyuncs.com/kubesphereio
+# 海外环境应该为空或包含：kubesphere
 
 echo "配置文件验证通过"
 ```
@@ -1287,7 +1847,7 @@ echo -e "\n安装验证完成！"
 **下一步操作：**
 - 安装成功 → [启用可插拔组件](#6-启用可插拔组件可选)
 - ❌ 遇到问题 → [常见问题处理](#7-常见问题处理)
-- 📚 了解更多 → [常用操作和最佳实践](#10-常用操作和最佳实践)
+-  了解更多 → [常用操作和最佳实践](#10-常用操作和最佳实践)
 
 ---
 
@@ -1482,7 +2042,7 @@ echo -e "\n组件验证完成"
 
 **相关链接：**
 - 🔙 返回 [安装验证](#54-验证安装)
-- 📖 查看 [常用操作和最佳实践](#10-常用操作和最佳实践)
+- 查看 [常用操作和最佳实践](#10-常用操作和最佳实践)
 - ⚙️ 了解 [高级配置](#9-高级配置)
 
 ---
@@ -1613,7 +2173,7 @@ kubectl apply -f cluster-configuration.yaml
 - 不要使用从 GitHub 直接下载的文件（可能不完整或版本不匹配）
 
 **相关链接：**
-- 📄 [完整的 installer YAML（附录 13.1）](#131-完整的-kubesphere-installer-yaml国内镜像版)
+- [完整的 installer YAML（附录 13.1）](#131-完整的-kubesphere-installer-yaml)
 - 📖 [正确的安装步骤（4.4 节）](#44-执行安装)
 
 ### 7.2 Pod 一直处于 Pending 状态
@@ -1741,18 +2301,27 @@ kubectl get pods -n kubesphere-monitoring-system
 kubectl get pods -n kube-system | grep metrics-server
 
 # 如果没有 metrics-server，安装它
+# 方法1：直接从 GitHub 安装（推荐，海外用户）
 kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
-# 或使用国内GitHub镜像
-wget https://mirror.ghproxy.com/https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/manifests/base/deployment.yaml
-# 如果上面失败，尝试：wget https://ghps.cc/https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/manifests/base/deployment.yaml
+# 方法2：下载后修改配置（国内用户推荐）
+# 由于可能需要添加参数，建议先下载再应用
+curl -L -o metrics-server-components.yaml \
+  https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
-# 编辑 deployment.yaml，添加参数
-# 在 args 下添加：
-# - --kubelet-insecure-tls
-# - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+# 编辑 metrics-server-components.yaml，在 Deployment 的 args 下添加：
+# spec:
+#   template:
+#     spec:
+#       containers:
+#       - args:
+#         - --kubelet-insecure-tls
+#         - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
 
-kubectl apply -f deployment.yaml
+vim metrics-server-components.yaml  # 添加上述参数
+
+# 应用修改后的配置
+kubectl apply -f metrics-server-components.yaml
 ```
 
 ### 7.9 日志组件安装失败（Elasticsearch）
@@ -1818,18 +2387,20 @@ spec:
 ### 8.1 删除 KubeSphere 资源
 
 ```bash
-# 下载卸载脚本
-wget https://github.com/kubesphere/ks-installer/blob/master/scripts/kubesphere-delete.sh
+# 方法1：直接下载卸载脚本（推荐）
+curl -L -o kubesphere-delete.sh \
+  https://raw.githubusercontent.com/kubesphere/ks-installer/master/scripts/kubesphere-delete.sh
 
-# 或使用国内GitHub镜像
-wget https://mirror.ghproxy.com/https://raw.githubusercontent.com/kubesphere/ks-installer/master/scripts/kubesphere-delete.sh
-# 如果上面失败，尝试：wget https://ghps.cc/https://raw.githubusercontent.com/kubesphere/ks-installer/master/scripts/kubesphere-delete.sh
+# 或使用 wget
+wget https://raw.githubusercontent.com/kubesphere/ks-installer/master/scripts/kubesphere-delete.sh
 
 # 添加执行权限
 chmod +x kubesphere-delete.sh
 
 # 执行卸载
 ./kubesphere-delete.sh
+
+# 方法2：如果无法下载，可以手动删除资源（参见下方 8.2 节）
 ```
 
 ### 8.2 手动清理残留资源
@@ -2029,21 +2600,21 @@ spec:
 
 ## 13. 附录
 
-### 13.1 完整的 KubeSphere Installer YAML（国内镜像版）
+### 13.1 完整的 KubeSphere Installer YAML
 
 **💡 使用说明：**
 - 以下 YAML 内容可直接复制使用，无需从 GitHub 下载
-- 已配置国内镜像源（registry.cn-beijing.aliyuncs.com/kubesphereio）
+- 提供国内和海外两种镜像版本
 - **已包含 ClusterConfiguration CRD 定义（重要！）**
 - 适用于在现有 Kubernetes 集群上安装 KubeSphere v3.4.1
 
 **使用方法：**
 
 ```bash
-# 方法1：复制以下完整内容，创建文件（推荐）
+# 方法1：复制对应环境的完整内容，创建文件（推荐）
 cd ~/kubesphere
 cat > kubesphere-installer.yaml <<'EOF'
-# 这里粘贴下面的完整 YAML 内容
+# 这里粘贴下面对应环境的完整 YAML 内容
 EOF
 
 # 方法2：在编辑器中直接复制下面的内容
@@ -2051,12 +2622,16 @@ EOF
 
 # 方法3：使用 vim/nano 编辑器
 vim kubesphere-installer.yaml
-# 然后粘贴下面的 YAML 内容
+# 然后粘贴下面对应环境的 YAML 内容
 ```
 
 **💡 快速跳转：**
 - 返回 [4.1 创建 Installer 文件](#41-创建-kubesphere-installer-部署文件)
 - 继续 [4.2 创建配置文件](#42-修改集群配置文件)
+
+---
+
+#### 方案A：国内环境 Installer YAML（使用阿里云镜像）
 
 ```yaml
 ---
@@ -2357,7 +2932,7 @@ spec:
       containers:
       - name: installer
         image: registry.cn-beijing.aliyuncs.com/kubesphereio/ks-installer:v3.4.1
-        # 说明：这是 KubeSphere 官方维护的阿里云镜像仓库，可正常访问
+        # 国内环境：使用 KubeSphere 官方维护的阿里云镜像仓库
         imagePullPolicy: Always
         resources:
           limits:
@@ -2376,6 +2951,336 @@ spec:
           type: ""
         name: host-time
 ```
+
+---
+
+#### 方案B：海外环境 Installer YAML（使用官方镜像）
+
+```yaml
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: clusterconfigurations.installer.kubesphere.io
+spec:
+  group: installer.kubesphere.io
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+    subresources:
+      status: {}
+  scope: Namespaced
+  names:
+    plural: clusterconfigurations
+    singular: clusterconfiguration
+    kind: ClusterConfiguration
+    shortNames:
+    - cc
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubesphere-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ks-installer
+  namespace: kubesphere-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ks-installer
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - apps
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - extensions
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - batch
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - apiregistration.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - tenant.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - certificates.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - devops.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - logging.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - jaegertracing.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - policy
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - autoscaling
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - networking.istio.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - config.istio.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - iam.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - notification.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - auditing.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - events.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - core.kubefed.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - installer.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - storage.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - security.istio.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - monitoring.kiali.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - kiali.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - edgeruntime.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - types.kubefed.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - monitoring.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - application.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - policy.kubeedge.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - cluster.kubesphere.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ks-installer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ks-installer
+subjects:
+- kind: ServiceAccount
+  name: ks-installer
+  namespace: kubesphere-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ks-installer
+  namespace: kubesphere-system
+  labels:
+    app: ks-installer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ks-installer
+  template:
+    metadata:
+      labels:
+        app: ks-installer
+    spec:
+      serviceAccountName: ks-installer
+      containers:
+      - name: installer
+        image: kubesphere/ks-installer:v3.4.1
+        # 海外环境：使用 Docker Hub 官方镜像仓库
+        imagePullPolicy: Always
+        resources:
+          limits:
+            cpu: "1"
+            memory: 1Gi
+          requests:
+            cpu: 20m
+            memory: 100Mi
+        volumeMounts:
+        - mountPath: /etc/localtime
+          name: host-time
+          readOnly: true
+      volumes:
+      - hostPath:
+          path: /etc/localtime
+          type: ""
+        name: host-time
+```
+
+---
+
+**说明**：
+- **国内环境（方案A）**：镜像地址为 `registry.cn-beijing.aliyuncs.com/kubesphereio/ks-installer:v3.4.1`
+- **海外环境（方案B）**：镜像地址为 `kubesphere/ks-installer:v3.4.1`（Docker Hub官方）
+- 两种配置除镜像地址外完全相同，CRD定义和权限配置完全一致
 
 ### 13.2 常用命令速查
 
@@ -2409,7 +3314,7 @@ kubectl patch users admin -p '{"spec":{"password":"$2a$10$zgo.NF.3YkCnp1fo5cWYl.
 
 ### 13.3 配置 etcd 监控（可选）
 
-**📖 为什么需要 etcd 监控？**
+**为什么需要 etcd 监控？**
 
 etcd 是 Kubernetes 集群的核心组件，存储了集群的所有状态数据。监控 etcd 可以帮助您：
 - 及时发现性能问题（延迟、吞吐量）
@@ -2677,9 +3582,9 @@ etcd:
 
 #### 相关链接
 
-- 📖 返回 [集群配置文件说明](#42-修改集群配置文件)
-- 🔧 查看 [监控组件故障排查](#78-监控数据不显示)
-- 📚 了解更多 [etcd 官方文档](https://etcd.io/docs/)
+- 返回 [集群配置文件说明](#42-修改集群配置文件)
+- 查看 [监控组件故障排查](#78-监控数据不显示)
+- 了解更多 [etcd 官方文档](https://etcd.io/docs/)
 
 ---
 
@@ -2706,29 +3611,28 @@ etcd:
 
 ---
 
-**🎉 安装完成！**
+**安装完成！**
 
 现在您可以通过浏览器访问 KubeSphere 控制台，开始使用强大的容器平台管理功能了！
 
 ---
 
-## 📚 快速链接
+## 快速链接
 
 ### 常用章节
-- 🏠 [返回目录](#-目录)
-- 🚀 [国内镜像源说明](#-国内镜像源说明2025年最新可用)
-- 📖 [常用操作和最佳实践](#10-常用操作和最佳实践)
-- 🔧 [常见问题处理](#7-常见问题处理)
-- ⚙️ [高级配置](#9-高级配置)
+- [返回目录](#目录)
+- [环境说明与方案选择](#环境说明与方案选择)
+- [镜像源配置说明](#镜像源配置说明)
+- [常用操作和最佳实践](#10-常用操作和最佳实践)
+- [常见问题处理](#7-常见问题处理)
+- [高级配置](#9-高级配置)
 
 ### 官方资源
-- 📘 [KubeSphere 官方文档](https://kubesphere.io/zh/docs/)
-- 💬 [官方论坛](https://kubesphere.io/forum/)
-- 🐛 [提交 Issue](https://github.com/kubesphere/kubesphere/issues)
+- [KubeSphere 官方文档](https://kubesphere.io/zh/docs/)
+- [官方论坛](https://kubesphere.io/forum/)
+- [提交 Issue](https://github.com/kubesphere/kubesphere/issues)
 
 ---
 
 如有问题，请参考 [官方文档](https://kubesphere.io/zh/docs/) 或 [社区支持](#122-社区支持)。
-
-**祝您使用愉快！** 🎉
 
