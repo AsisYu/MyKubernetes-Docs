@@ -1,5 +1,12 @@
 # 使用阿里源安装Kubernetes集群完整指南
 
+> **文档更新说明（2025-11-03）**：
+> - ⭐ **新增**：为所有涉及镜像源的步骤添加海外环境安装说明
+> - ⭐ **新增**：国内环境和海外环境的方案对比和选择指导
+> - 优化了文档结构，每个需要配置镜像源的地方都提供两种方案
+> - 涵盖：Containerd安装、pause镜像配置、Kubernetes源、kubeadm init、Flannel部署
+> - 海外用户现在可以直接使用官方源，无需阿里云加速
+
 > **文档更新说明（2025-10-23）**：
 > - 🔴 **重大修正**：修复了高可用集群负载均衡器方案的严重错误
 > - 🔴 **明确指出**：Keepalived + VIP 方案只适用于同一网段，跨网段必须使用独立LB服务器
@@ -12,7 +19,41 @@
 > - ⭐ **新增**：详细的负载均衡器验证步骤，避免"VIP可ping但6443端口拒绝连接"的常见错误
 > - ⭐ **新增**：7.8节详细的负载均衡器问题排查和解决方案
 
-以下是在国内CentOS 9节点（master+2 worker）上使用阿里源安装kubelet、kubeadm、kubectl的详细流程，包含环境准备、依赖安装、组件部署和全面验证等步骤。
+---
+
+## **环境说明与方案选择**
+
+本文档支持国内和海外两种网络环境的部署：
+
+### **国内环境（中国大陆）**
+- **特点**：官方源（registry.k8s.io、quay.io等）访问慢或无法访问
+- **解决方案**：全程使用阿里云镜像源加速
+- **适用范围**：
+  - Docker/Containerd安装源
+  - Kubernetes pause镜像
+  - Kubernetes组件下载源
+  - kubeadm初始化镜像仓库
+  - Flannel网络插件镜像
+
+### **海外环境（国际/香港/台湾等）**
+- **特点**：可直接访问官方源，速度快且稳定
+- **解决方案**：使用官方镜像源
+- **优势**：
+  - 版本更新及时
+  - 无需额外配置镜像加速
+  - 与官方文档保持一致
+
+### **如何选择**
+
+在后续每个需要配置镜像源的步骤中，文档都会提供：
+- **方案A：国内环境配置**（使用阿里源）
+- **方案B：海外环境配置**（使用官方源）
+
+请根据您服务器的实际网络环境选择对应方案。
+
+---
+
+以下是在CentOS 9节点（master+2 worker）上安装kubelet、kubeadm、kubectl的详细流程，包含环境准备、依赖安装、组件部署和全面验证等步骤。
 
 ---
 
@@ -277,10 +318,19 @@ sysctl net.ipv4.ip_forward
 
 
 ### **第二步：所有节点安装容器运行时（Containerd）**
-k8s从1.24起不再支持Docker（需通过containerd），这里直接安装containerd并配置阿里镜像。
+k8s从1.24起不再支持Docker（需通过containerd），这里直接安装containerd并配置镜像源。
 
 
-#### 2.1 安装Containerd（使用阿里源）
+#### 2.1 安装Containerd
+
+**方案选择：根据您的网络环境选择对应方案**
+
+---
+
+**方案A：国内环境（使用阿里源，推荐）**
+
+适用于：中国大陆服务器，解决Docker官方源访问慢的问题
+
 ```bash
 # 添加Docker阿里源（containerd包含在Docker源中）
 cat > /etc/yum.repos.d/docker-ce.repo << EOF
@@ -296,65 +346,120 @@ EOF
 dnf install -y containerd.io
 ```
 
+---
+
+**方案B：海外环境（使用Docker官方源）**
+
+适用于：海外服务器、香港、台湾等地区，官方源速度快
+
+```bash
+# 添加Docker官方源
+dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+# 或手动创建配置文件
+cat > /etc/yum.repos.d/docker-ce.repo << EOF
+[docker-ce-stable]
+name=Docker CE Stable - \$basearch
+baseurl=https://download.docker.com/linux/centos/\$releasever/\$basearch/stable
+enabled=1
+gpgcheck=1
+gpgkey=https://download.docker.com/linux/centos/gpg
+EOF
+
+# 安装containerd
+dnf install -y containerd.io
+```
+
+**说明**：
+- 国内环境推荐使用阿里源，下载速度快（1-2分钟）
+- 海外环境使用官方源，速度更快且更稳定
+- 两种方案安装的containerd版本和功能完全相同
+
 
 #### 2.2 配置Containerd（适配k8s要求）
+
+**第一步：生成默认配置文件（所有环境相同）**
 
 ```bash
 # 生成默认配置文件
 containerd config default > /etc/containerd/config.toml
+```
 
-# 修改配置（关键参数）：
-# 1. 替换沙箱镜像为阿里源（默认registry.k8s.io/k8s.gcr.io无法访问）
-# 2. 启用SystemdCgroup（k8s推荐）
+---
 
-# 方法1：通用替换（推荐，适用所有版本）
+**第二步：修改pause镜像源（根据环境选择）**
+
+**选项A：国内环境（使用阿里云镜像，推荐）**
+
+```bash
+# 替换沙箱镜像为阿里源（默认registry.k8s.io在国内无法访问）
 sed -i "s#sandbox_image = \".*\"#sandbox_image = \"registry.aliyuncs.com/google_containers/pause:3.9\"#g" /etc/containerd/config.toml
 
-# 方法2：针对特定版本（如果方法1不工作，根据实际情况选择）
-# sed -i "s#sandbox_image = \"registry.k8s.io/pause:.*\"#sandbox_image = \"registry.aliyuncs.com/google_containers/pause:3.9\"#g" /etc/containerd/config.toml
-# sed -i "s#sandbox_image = \"k8s.gcr.io/pause:.*\"#sandbox_image = \"registry.aliyuncs.com/google_containers/pause:3.9\"#g" /etc/containerd/config.toml
-
-# 查看当前的sandbox_image配置
+# 验证配置
 grep "sandbox_image" /etc/containerd/config.toml
-# 然后手动修改
+# 应该显示：sandbox_image = "registry.aliyuncs.com/google_containers/pause:3.9"
+```
 
+**选项B：海外环境（使用官方镜像源）**
 
-# 启用SystemdCgroup
+```bash
+# 海外环境可以直接访问官方镜像，无需修改或使用以下配置
+# 选项1：保持默认配置（registry.k8s.io，推荐）
+# 无需执行任何命令，跳过此步骤
+
+# 选项2：或明确指定官方源
+sed -i "s#sandbox_image = \".*\"#sandbox_image = \"registry.k8s.io/pause:3.9\"#g" /etc/containerd/config.toml
+
+# 验证配置
+grep "sandbox_image" /etc/containerd/config.toml
+# 应该显示：sandbox_image = "registry.k8s.io/pause:3.9" 或保持原默认值
+```
+
+**说明**：
+- 国内环境必须使用阿里云镜像，否则镜像拉取会超时
+- 海外环境可直接使用官方源 `registry.k8s.io`，速度更快
+- pause镜像是K8s的基础镜像，每个Pod都需要
+
+---
+
+**第三步：启用SystemdCgroup（所有环境必须执行）**
+
+```bash
+# 启用SystemdCgroup（k8s推荐配置）
 sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
 
-# 验证配置是否修改成功（重要！）
-echo "=== 验证配置 ==="
-echo "Sandbox镜像配置:"
-grep "sandbox_image" /etc/containerd/config.toml
-echo ""
-echo "SystemdCgroup配置:"
+# 验证SystemdCgroup配置
 grep "SystemdCgroup = true" /etc/containerd/config.toml
+# 应该显示：SystemdCgroup = true
+```
 
-# 如果上面的grep没有显示正确的配置，说明sed替换失败
-# 需要手动编辑：vim /etc/containerd/config.toml
-# 找到 sandbox_image 那一行，改为：
-#   sandbox_image = "registry.aliyuncs.com/google_containers/pause:3.9"
-# 找到 SystemdCgroup 那一行，改为：
-#   SystemdCgroup = true
+---
 
+**第四步：重启服务并验证（所有环境相同）**
+
+```bash
 # 重启containerd并设置开机自启
 systemctl restart containerd
 systemctl enable containerd
 systemctl status containerd
-
-# 手动拉取pause镜像（可选，提前准备）
-crictl pull registry.aliyuncs.com/google_containers/pause:3.9
-crictl images | grep pause
 ```
+
+---
 
 **⚠️ 重要提醒**：
 - 必须验证配置修改成功后再继续！
-- 如果 `grep` 没有显示正确的阿里云镜像地址，说明sed替换失败
-- 这种情况需要手动编辑 `/etc/containerd/config.toml` 文件
+- 如果 `grep` 没有显示正确的镜像地址，说明sed替换失败
+- 这种情况需要手动编辑：`vim /etc/containerd/config.toml`
 - **Master和所有Worker节点都必须执行此配置**
+- **所有节点必须使用相同的镜像源配置**
+
+> 💡 **说明**：pause镜像的拉取测试需要使用 `crictl` 命令，该命令在安装Kubernetes组件后才可用。镜像拉取验证将在 [2.3节](#23-验证containerd安装) 和 [3.3节](#33-验证kube组件安装) 之后进行。
 
 
 #### 2.3 验证Containerd安装
+
+**第一步：基础验证（所有环境）**
+
 ```bash
 # 检查containerd服务状态（应显示active/running）
 systemctl status containerd
@@ -362,21 +467,62 @@ systemctl status containerd
 # 检查containerd版本
 containerd --version
 
-# 验证containerd配置（检查关键配置是否生效）
-grep "registry.aliyuncs.com" /etc/containerd/config.toml
+# 验证SystemdCgroup配置（必须为true）
 grep "SystemdCgroup = true" /etc/containerd/config.toml
 
 # 测试containerd运行（应无报错）
 ctr version
 ```
-> **验证成功标准**：containerd服务运行正常、配置文件修改正确、命令行工具可用。
+
+---
+
+**第二步：镜像源配置验证（根据环境选择）**
+
+**国内环境验证**：
+
+```bash
+# 验证阿里云镜像配置
+grep "registry.aliyuncs.com" /etc/containerd/config.toml
+# 应该显示：sandbox_image = "registry.aliyuncs.com/google_containers/pause:3.9"
+```
+
+**海外环境验证**：
+
+```bash
+# 验证官方镜像配置
+grep "sandbox_image" /etc/containerd/config.toml
+# 应该显示：sandbox_image = "registry.k8s.io/pause:3.9" 或默认值
+```
+
+---
+
+> **当前阶段验证成功标准**：
+> - containerd服务运行正常（active/running）
+> - SystemdCgroup配置为true
+> - 镜像源配置正确（国内用阿里源，海外用官方源）
+> - `ctr version` 命令可用
+>
+> 💡 **关于镜像拉取测试**：
+> - `crictl` 命令需要安装 `cri-tools` 包才能使用
+> - `cri-tools` 将在第三步安装Kubernetes组件时自动安装
+> - 镜像拉取测试请在完成 [第三步](#第三步所有节点安装kubeletkubeadmkubectl) 后进行
+> - 届时可以在 [3.3节验证kube组件安装](#33-验证kube组件安装) 后执行镜像拉取测试
 
 
-### **第三步：所有节点安装kubelet、kubeadm、kubectl（阿里源）**
-通过阿里k8s镜像源安装组件，避免官方源访问超时。
+### **第三步：所有节点安装kubelet、kubeadm、kubectl**
+根据网络环境选择合适的镜像源安装组件。
 
 
-#### 3.1 添加阿里k8s源
+#### 3.1 添加Kubernetes源
+
+**方案选择：根据您的网络环境选择对应方案**
+
+---
+
+**方案A：国内环境（使用阿里源，推荐）**
+
+适用于：中国大陆服务器，避免官方源访问超时
+
 ```bash
 cat > /etc/yum.repos.d/kubernetes.repo << EOF
 [kubernetes]
@@ -389,7 +535,46 @@ gpgkey=https://mirrors.aliyun.com/kubernetes/yum/doc/yum-key.gpg https://mirrors
 exclude=kubelet kubeadm kubectl
 EOF
 ```
+
 > 说明：阿里暂未提供`el9`版本的k8s源，此处使用`el7`源（CentOS 9兼容多数el7包，若安装失败可尝试替换为`el8`源）。
+
+---
+
+**方案B：海外环境（使用官方源）**
+
+适用于：海外服务器、香港、台湾等地区，官方源速度快
+
+```bash
+cat > /etc/yum.repos.d/kubernetes.repo << EOF
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key
+exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+EOF
+```
+
+或使用旧版官方源（兼容性更好）：
+
+```bash
+cat > /etc/yum.repos.d/kubernetes.repo << EOF
+[kubernetes]
+name=Kubernetes
+baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+exclude=kubelet kubeadm kubectl
+EOF
+```
+
+**说明**：
+- 国内环境强烈推荐使用阿里源，官方源可能无法访问或极慢
+- 海外环境使用官方源，可获得最新版本和更好的稳定性
+- 新版官方源（pkgs.k8s.io）是Kubernetes官方推荐的仓库
 
 
 #### 3.2 安装kube组件
@@ -403,6 +588,9 @@ systemctl enable --now kubelet
 
 
 #### 3.3 验证kube组件安装
+
+**第一步：基础验证（所有环境）**
+
 ```bash
 # 检查组件版本（应显示1.28.0）
 kubelet --version
@@ -414,9 +602,53 @@ systemctl status kubelet
 
 # 验证kube源配置
 dnf repolist | grep kubernetes
+
+# 验证crictl命令已安装（用于后续镜像操作）
+crictl --version
 ```
-> **验证成功标准**：三个组件版本均为1.28.0、kubernetes源已启用。
-> ⚠️ **注意**：此时kubelet服务可能处于失败状态，这是正常现象，在执行kubeadm init后会自动恢复。
+
+---
+
+**第二步：镜像拉取测试（可选，验证containerd配置）**
+
+现在 `crictl` 命令已可用，可以测试pause镜像拉取：
+
+**国内环境测试**：
+
+```bash
+# 测试拉取阿里云pause镜像
+crictl pull registry.aliyuncs.com/google_containers/pause:3.9
+
+# 查看镜像
+crictl images | grep pause
+
+# 应该看到：registry.aliyuncs.com/google_containers/pause
+```
+
+**海外环境测试**：
+
+```bash
+# 测试拉取官方pause镜像
+crictl pull registry.k8s.io/pause:3.9
+
+# 查看镜像
+crictl images | grep pause
+
+# 应该看到：registry.k8s.io/pause
+```
+
+---
+
+> **验证成功标准**：
+> - 三个组件版本均为1.28.0
+> - kubernetes源已启用
+> - `crictl` 命令可用
+> - 能够成功拉取pause镜像（证明containerd配置正确）
+>
+> ⚠️ **注意**：
+> - 此时kubelet服务可能处于失败状态，这是正常现象
+> - kubelet会在执行 `kubeadm init` 后自动恢复
+> - 如果镜像拉取失败，请检查第二步的containerd配置
 
 
 ### **第四步：选择集群架构并初始化Master**
@@ -446,15 +678,45 @@ dnf repolist | grep kubernetes
 
 ### 4A.1 初始化集群（关键步骤）
 
-在**Master节点**执行以下命令：
+在**Master节点**执行以下命令（根据环境选择对应配置）：
+
+---
+
+**方案A：国内环境（使用阿里镜像仓库）**
 
 ```bash
 kubeadm init \
-  --image-repository registry.aliyuncs.com/google_containers \  # 阿里镜像仓库
+  --image-repository registry.aliyuncs.com/google_containers \  # 阿里镜像仓库（国内加速）
   --kubernetes-version v1.28.0 \  # 与安装的kube组件版本一致
   --pod-network-cidr=10.244.0.0/16 \  # Pod网络网段（适配flannel网络插件）
   --apiserver-advertise-address=172.16.0.10  # Master节点IP（修改为实际IP）
 ```
+
+---
+
+**方案B：海外环境（使用官方镜像仓库）**
+
+```bash
+kubeadm init \
+  --image-repository registry.k8s.io \  # 官方镜像仓库
+  --kubernetes-version v1.28.0 \  # 与安装的kube组件版本一致
+  --pod-network-cidr=10.244.0.0/16 \  # Pod网络网段（适配flannel网络插件）
+  --apiserver-advertise-address=172.16.0.10  # Master节点IP（修改为实际IP）
+```
+
+或省略镜像仓库参数（使用默认官方源）：
+
+```bash
+kubeadm init \
+  --kubernetes-version v1.28.0 \
+  --pod-network-cidr=10.244.0.0/16 \
+  --apiserver-advertise-address=172.16.0.10
+```
+
+**说明**：
+- 国内环境必须指定 `--image-repository` 为阿里源，否则镜像拉取会失败
+- 海外环境可以使用官方源 `registry.k8s.io` 或直接省略该参数
+- 确保 `--apiserver-advertise-address` 修改为您Master节点的实际IP
 
 **初始化成功后的输出示例**：
 ```
@@ -559,13 +821,26 @@ kubeadm token create --print-join-command
 
 
 ### 4A.3 安装网络插件（Flannel，Master节点）
-k8s集群需要网络插件实现Pod互通，这里使用Flannel（阿里镜像加速）：
+
+k8s集群需要网络插件实现Pod互通，这里使用Flannel。
+
+---
+
+**方案A：国内环境（使用阿里镜像加速）**
+
 ```bash
-# 下载flannel配置文件（国内镜像版）
+# 下载flannel配置文件
 wget https://raw.githubusercontent.com/flannel-io/flannel/v0.22.0/Documentation/kube-flannel.yml
+
+# 如果wget下载失败（GitHub访问受限），使用以下备用方法：
+# curl -O https://raw.githubusercontent.com/flannel-io/flannel/v0.22.0/Documentation/kube-flannel.yml
+# 或使用本地已有的kube-flannel.yml文件
 
 # 替换镜像地址为阿里源（避免quay.io访问超时）
 sed -i "s#quay.io/coreos/flannel#registry.cn-hangzhou.aliyuncs.com/kubernetes-minions/flannel#g" kube-flannel.yml
+
+# 或使用阿里云镜像加速
+# sed -i "s#quay.io/coreos/flannel#registry.aliyuncs.com/google_containers/flannel#g" kube-flannel.yml
 
 # 部署flannel
 kubectl apply -f kube-flannel.yml
@@ -580,7 +855,36 @@ kubectl get pods -n kube-system
 kubectl logs -n kube-flannel -l app=flannel --tail=20
 ```
 
-- 等待2-3分钟，再次执行`kubectl get nodes`，Master节点状态变为`Ready`。
+---
+
+**方案B：海外环境（使用官方镜像）**
+
+```bash
+# 下载flannel配置文件
+wget https://raw.githubusercontent.com/flannel-io/flannel/v0.22.0/Documentation/kube-flannel.yml
+
+# 海外环境可直接部署，无需修改镜像地址
+kubectl apply -f kube-flannel.yml
+
+# 或直接在线部署（推荐）
+kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.22.0/Documentation/kube-flannel.yml
+
+# 验证网络插件状态
+kubectl get pods -n kube-flannel
+
+# 查看所有系统组件pod状态
+kubectl get pods -n kube-system
+
+# 查看flannel日志
+kubectl logs -n kube-flannel -l app=flannel --tail=20
+```
+
+---
+
+**说明**：
+- 国内环境必须替换镜像为阿里源，quay.io在国内无法访问
+- 海外环境可直接使用官方镜像，速度更快且版本更新
+- 等待2-3分钟，再次执行`kubectl get nodes`，Master节点状态变为`Ready`
 
 ### 4A.4 验证Master节点初始化完成
 ```bash
@@ -1155,21 +1459,55 @@ echo "  3. 网络路由是否正确"
 - **方案A（独立LB）**：使用LB服务器IP，例如 `172.16.3.1:6443`
 - **方案B（Keepalived + VIP）**：使用VIP地址，例如 `172.16.3.1:6443`
 
-**在第一个Master节点（172.16.0.10）执行：**
+**在第一个Master节点（172.16.0.10）执行（根据环境选择对应配置）：**
+
+---
+
+**方案A：国内环境（使用阿里镜像仓库）**
 
 ```bash
-# 示例：使用独立LB服务器（方案A）
+# 使用独立LB服务器或Keepalived + VIP
 kubeadm init \
-  --image-repository registry.aliyuncs.com/google_containers \
+  --image-repository registry.aliyuncs.com/google_containers \  # 阿里镜像仓库（国内加速）
   --kubernetes-version v1.28.0 \
   --pod-network-cidr=10.244.0.0/16 \
   --control-plane-endpoint "172.16.3.1:6443" \  # 负载均衡器地址（重要！）
   --upload-certs \  # 自动上传证书，允许其他Master加入（重要！）
   --apiserver-advertise-address=172.16.0.10  # 当前Master的实际IP
-
-# 如果使用Keepalived + VIP（方案B），改为：
-# --control-plane-endpoint "172.16.3.1:6443" \
 ```
+
+---
+
+**方案B：海外环境（使用官方镜像仓库）**
+
+```bash
+# 使用独立LB服务器或Keepalived + VIP
+kubeadm init \
+  --image-repository registry.k8s.io \  # 官方镜像仓库
+  --kubernetes-version v1.28.0 \
+  --pod-network-cidr=10.244.0.0/16 \
+  --control-plane-endpoint "172.16.3.1:6443" \  # 负载均衡器地址（重要！）
+  --upload-certs \  # 自动上传证书，允许其他Master加入（重要！）
+  --apiserver-advertise-address=172.16.0.10  # 当前Master的实际IP
+```
+
+或省略镜像仓库参数（使用默认官方源）：
+
+```bash
+kubeadm init \
+  --kubernetes-version v1.28.0 \
+  --pod-network-cidr=10.244.0.0/16 \
+  --control-plane-endpoint "172.16.3.1:6443" \
+  --upload-certs \
+  --apiserver-advertise-address=172.16.0.10
+```
+
+---
+
+**说明**：
+- 国内环境必须使用阿里镜像仓库，否则镜像拉取会失败
+- 海外环境可以使用官方源或省略该参数
+- `--control-plane-endpoint` 根据您选择的负载均衡器方案填写对应地址
 
 **关键参数说明**：
 - `--control-plane-endpoint`：**负载均衡器地址**，所有节点都通过这个地址访问API Server
@@ -1228,11 +1566,20 @@ kubectl cluster-info
 
 ### 4B.4 第四步：安装网络插件（Flannel）
 
+**方案选择：根据您的网络环境选择对应方案**
+
+---
+
+**方案A：国内环境（使用阿里镜像）**
+
 ```bash
 # 下载flannel配置文件
 wget https://raw.githubusercontent.com/flannel-io/flannel/v0.22.0/Documentation/kube-flannel.yml
 
-# 替换镜像地址为阿里源（能用可跳过）
+# 如果wget下载失败，使用本地已有文件或curl
+# curl -O https://raw.githubusercontent.com/flannel-io/flannel/v0.22.0/Documentation/kube-flannel.yml
+
+# 替换镜像地址为阿里源（必须执行）
 sed -i "s#quay.io/coreos/flannel#registry.cn-hangzhou.aliyuncs.com/kubernetes-minions/flannel#g" kube-flannel.yml
 
 # 部署flannel
@@ -1245,6 +1592,32 @@ kubectl get pods -n kube-flannel
 kubectl get nodes
 # Master节点应该变为Ready状态
 ```
+
+---
+
+**方案B：海外环境（使用官方镜像）**
+
+```bash
+# 直接在线部署（推荐）
+kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.22.0/Documentation/kube-flannel.yml
+
+# 或下载后部署
+wget https://raw.githubusercontent.com/flannel-io/flannel/v0.22.0/Documentation/kube-flannel.yml
+kubectl apply -f kube-flannel.yml
+
+# 验证网络插件状态
+kubectl get pods -n kube-flannel
+
+# 等待2-3分钟，再次查看节点状态
+kubectl get nodes
+# Master节点应该变为Ready状态
+```
+
+---
+
+**说明**：
+- 国内环境必须替换镜像为阿里源
+- 海外环境可直接使用官方镜像，速度更快
 
 ---
 
@@ -1408,13 +1781,19 @@ echo "=== 系统组件 ===" && kubectl get pods -A
 
 **在Worker节点加入集群之前，必须确保以下配置正确：**
 
-```bash
-# 在每个Worker节点上执行以下检查
+**第一步：检查containerd配置（最关键）**
 
-# 1. 检查containerd配置（最关键！）
+根据您的环境检查对应的镜像源配置：
+
+**国内环境检查**：
+
+```bash
+# 在每个Worker节点上执行
+
+# 1. 检查Sandbox镜像配置
 echo "=== 检查Sandbox镜像配置 ==="
 grep "sandbox_image" /etc/containerd/config.toml
-# 必须显示：sandbox_image = "registry.aliyuncs.com/google_containers/pause:3.9"
+# 国内环境必须显示：sandbox_image = "registry.aliyuncs.com/google_containers/pause:3.9"
 # 如果显示的是 registry.k8s.io 或 k8s.gcr.io，必须修改！
 
 echo ""
@@ -1422,7 +1801,7 @@ echo "=== 检查SystemdCgroup配置 ==="
 grep "SystemdCgroup = true" /etc/containerd/config.toml
 # 必须显示：SystemdCgroup = true
 
-# 2. 如果配置不正确，立即修复
+# 2. 如果配置不正确，立即修复（国内环境）
 # sed -i "s#sandbox_image = \".*\"#sandbox_image = \"registry.aliyuncs.com/google_containers/pause:3.9\"#g" /etc/containerd/config.toml
 # sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
 # systemctl restart containerd
@@ -1432,12 +1811,49 @@ grep "SystemdCgroup = true" /etc/containerd/config.toml
 systemctl status containerd | head -3
 systemctl status kubelet | head -3
 
-# 4. 测试镜像拉取（可选但推荐）
+# 4. 测试镜像拉取（国内环境）
 crictl pull registry.aliyuncs.com/google_containers/pause:3.9
 crictl images | grep pause
 ```
 
-**⚠️ 常见错误警告**：
+**海外环境检查**：
+
+```bash
+# 在每个Worker节点上执行
+
+# 1. 检查Sandbox镜像配置
+echo "=== 检查Sandbox镜像配置 ==="
+grep "sandbox_image" /etc/containerd/config.toml
+# 海外环境应显示：sandbox_image = "registry.k8s.io/pause:3.9" 或保持默认值
+
+echo ""
+echo "=== 检查SystemdCgroup配置 ==="
+grep "SystemdCgroup = true" /etc/containerd/config.toml
+# 必须显示：SystemdCgroup = true
+
+# 2. 如果SystemdCgroup配置不正确，修复
+# sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
+# systemctl restart containerd
+# systemctl restart kubelet
+
+# 3. 验证服务状态
+systemctl status containerd | head -3
+systemctl status kubelet | head -3
+
+# 4. 测试镜像拉取（海外环境）
+crictl pull registry.k8s.io/pause:3.9
+crictl images | grep pause
+```
+
+---
+
+**⚠️ 重要提醒**：
+- **所有Worker节点必须与Master节点使用相同的镜像源配置**
+- 国内Master + 国内Worker：都使用阿里源
+- 海外Master + 海外Worker：都使用官方源
+- **不要混用**：Master用阿里源，Worker用官方源（会导致镜像不一致）
+
+**⚠️ 常见错误警告（国内环境）**：
 - 如果Worker节点的containerd配置错误（使用registry.k8s.io），会导致：
   - Pod无法创建（Failed to create pod sandbox）
   - 镜像拉取超时（i/o timeout）
